@@ -4,11 +4,6 @@ import chardet
 import httpx
 import re
 
-import httpx
-from bs4 import BeautifulSoup
-import chardet
-import re
-
 async def get_disciplines_module(url: str, direction_name: str):
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
@@ -32,7 +27,7 @@ async def get_disciplines_module(url: str, direction_name: str):
                 ac_elements = parent_element.find_all(class_="dxgv dx-ac")
                 kyrs = ac_elements[2]
                 semestr = ac_elements[3]
-
+                
                 disciplines[f'{direction_name}'].append(
                     {
                         "name": filename.get_text(),
@@ -46,8 +41,9 @@ async def get_disciplines_module(url: str, direction_name: str):
 
 async def get_pdf(id_url, name):
         url = f"https://lk.donstu.ru/RPDPrint/printrp?id={id_url}&isPDF=true"
+        timeout = httpx.Timeout(10.0, read=30.0)
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(url)
                 response.raise_for_status()
 
@@ -67,7 +63,7 @@ def get_url_direction(direction: str) -> str:
         "ВКБ" : "https://edu.donstu.ru/Plans/Plan.aspx?id=50117",
         "ВИАС" : "https://edu.donstu.ru/Plans/Plan.aspx?id=48732",
         "ВПР" : "https://edu.donstu.ru/Plans/Plan.aspx?id=50104",
-        "ВМО" : "https://edu.donstu.ru/Plans/Plan.aspx?id=48571",
+        "ВМО" : "https://edu.donstu.ru/Plans/Plan.aspx?id=50288",
         "ЭИБТ" : "https://edu.donstu.ru/Plans/Plan.aspx?id=48832",
         "ВПМ": "https://edu.donstu.ru/Plans/Plan.aspx?id=48563",
         "БДиМО": "https://edu.donstu.ru/Plans/Plan.aspx?id=50288",

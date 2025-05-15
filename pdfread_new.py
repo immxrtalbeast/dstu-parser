@@ -5,15 +5,10 @@ import asyncio
 from functools import partial
 from parse import get_pdf
 
-def extract_text_sync(file_path):
-    pdf_file = open(file_path, 'rb')
-    pdf_reader = PyPDF2.PdfReader(pdf_file)
-    text = ''
-    for page in pdf_reader.pages:
-        text += page.extract_text()
-    pdf_file.close()
-    os.remove(file_path)
-    return text
+async def get_practice_pdf(link, file_name):
+    return await extract_text(link, file_name, )
+
+
 
 async def extract_text(link, file_name):
     if not os.path.exists(f"{file_name}.pdf"):
@@ -24,57 +19,74 @@ async def extract_text(link, file_name):
 
     return await get_topics_and_sections(text)
 
+def extract_text_sync(file_path):
+    pdf_file = open(file_path, 'rb')
+    pdf_reader = PyPDF2.PdfReader(pdf_file)
+    text = ''
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+    pdf_file.close()
+    os.remove(file_path)
+    return text
 async def get_topics_and_sections(text):
-    pattern = re.compile(r'^(\d+\.\d+)\s+(.*?)/(\w+)/', re.MULTILINE | re.DOTALL)
+    CATEGORY_PATTERNS = {
+        "practice": "/Пр/",
+        "lectures": "/Лек/",
+        "independent_works": "/Ср/"
+    }
 
-    matches = pattern.findall(text)
+    def parse_content(text):
+        section_pattern = re.compile(r'Раздел \d+\. .*?(?=\n\n|\n\d+\.|\Z)', re.MULTILINE | re.DOTALL)
+        sections = [re.sub(r"стр\. \d+.*\.plx", "", s) for s in section_pattern.findall(text)]
+        
+        topic_pattern = re.compile(r'^(\d+\.\d+)\s+(.*?)/(\w+)/', re.MULTILINE | re.DOTALL)
+        return sections, [
+            f" {m[0]} {re.sub(r'ОПК-?\d+\.\d+\.\d+', '', m[1]).strip()} /{m[2]}/".strip()
+            for m in topic_pattern.findall(text)
+        ]
 
-    section_pattern = re.compile(r'Раздел \d+\. .*?(?=\n\n|\n\d+\.|\Z)', re.MULTILINE | re.DOTALL)
-    trash_pattern = re.compile(r"стр\. \d+.*\.plx")
-
-    sections = section_pattern.findall(text)
-    cleaned_sections = []
-    for section in sections:
-
-        cleaned_section = trash_pattern.sub("", section)
-        cleaned_sections.append(cleaned_section)
-
-
-
-    extracted_data = []
-    for match in matches:
-        section_number = match[0]
-        topic_name = re.sub(r'ОПК-?\d+\.\d+\.\d+', '', match[1]).strip()
-        class_type = match[2]
-        extracted_data.append(f" {section_number} {topic_name} /{class_type}/")
-
-
-    topics = []
-
+    sections, extracted_data = parse_content(text)
+    
+    categorized_topics = {cat: [] for cat in CATEGORY_PATTERNS}
     for data in extracted_data:
-        if "/Пр/"  in data:
-            topics.append(data.strip())
-    return await combine_data(cleaned_sections, topics)
+        for cat, pattern in CATEGORY_PATTERNS.items():
+            if pattern in data:
+                categorized_topics[cat].append(data)
+                break
+
+    return await asyncio.gather(
+        *[combine_data(sections, topics) 
+         for topics in categorized_topics.values()]
+    )
 
 
 async def combine_data(sections, topics):
+    if not sections or not topics:
+        return []
+    
     result = []
-    result.append(sections[0])  
-    i = 0 
-
+    current_section_idx = 0
+    
+    get_section_number = lambda s: s.split()[1].split('.', 1)[0]
+    get_topic_number = lambda t: t.split('.', 1)[0].strip()
+    
+    if sections:
+        result.append(sections[0])
+    
     for topic in topics:
-
-        if topic.split('.')[0] == sections[i].split(' ')[1].split('.')[0]:
-            result.append(topic)
-        else:
-            i += 1
-            result.append(sections[i])  
-            if topic.split('.')[0] == sections[i].split(' ')[1].split('.')[0]:
+        topic_num = get_topic_number(topic)
+        
+        while current_section_idx < len(sections):
+            section_num = get_section_number(sections[current_section_idx])
+            
+            if topic_num == section_num:
                 result.append(topic)
-
-
+                break
+                
+            current_section_idx += 1
+            if current_section_idx < len(sections):
+                result.append(sections[current_section_idx])
+        else:
+            break
+            
     return result
-
-async def get_practice_pdf(link, file_name):
-    return await extract_text(link, file_name)
-
